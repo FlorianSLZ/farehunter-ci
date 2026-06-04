@@ -1,0 +1,123 @@
+name: FareHunter Daily Scan
+
+on:
+  schedule:
+    - cron: "0 6,18 * * *"   # 6 AM and 6 PM UTC every day
+  workflow_dispatch:
+    inputs:
+      route:
+        description: 'Route to scan, e.g. ZRH-JFK (empty = ALL)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read   # this public repo needs no write access
+
+jobs:
+  scan:
+    name: Scrape ${{ matrix.route }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: fare-hunter-scan-${{ matrix.route }}
+      cancel-in-progress: false
+
+    strategy:
+      fail-fast: false
+      matrix:
+        route: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.route != '') && fromJSON(format('["{0}"]', github.event.inputs.route)) || fromJSON('["ZRH-JFK","ZRH-LAX","ZRH-SFO","ZRH-NRT","ZRH-SIN","ZRH-HKG","ZRH-BKK","FRA-JFK","FRA-SIN","FRA-NRT","MXP-BKK","MXP-HKG","OSL-HND","VIE-NRT","AMS-JFK","MUC-JFK","MUC-SIN","MUC-NRT","MUC-BKK","MUC-HKG","BUD-JFK","BUD-NRT","BUD-BKK"]') }}
+
+    steps:
+      - name: Checkout private FareHunter repo
+        uses: actions/checkout@v4
+        with:
+          repository: FlorianSLZ/FareHunter
+          token: ${{ secrets.FAREHUNTER_PAT }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+
+      - name: Run FareHunter — ${{ matrix.route }}
+        run: python main.py --route ${{ matrix.route }}
+
+      - name: Write job summary
+        if: always()
+        shell: python
+        run: |
+          import json, os, pathlib
+
+          summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
+          if not summary_file:
+              raise SystemExit(0)
+
+          route = "${{ matrix.route }}"
+          try:
+              deals = json.loads(pathlib.Path(f"deals-{route}.json").read_text(encoding="utf-8"))
+          except Exception:
+              deals = []
+
+          lines = [f"## FareHunter — {route}\n"]
+          if deals:
+              lines.append(f"### {len(deals)} deal(s) detected\n")
+              for d in deals:
+                  icon = "🔥" if d["deal"] == "EXCEPTIONAL DEAL" else "✅"
+                  dep = d.get("departure_date", "")
+                  ret = d.get("return_date", "")
+                  date_range = f"{dep} → {ret}" if ret else dep
+                  lines.append(
+                      f"{icon} **{d['origin']} → {d['destination']}** ({date_range}) — "
+                      f"${d['price']:,.0f} vs ${d['baseline']:,.0f} baseline "
+                      f"({d['deal']}) — {d['airline']}"
+                  )
+          else:
+              lines.append("No deals detected this run.")
+
+          with open(summary_file, "a", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+
+      - name: Upload deals artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deals-${{ matrix.route }}-${{ github.run_id }}
+          path: deals-${{ matrix.route }}.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots-${{ matrix.route }}-${{ github.run_id }}
+          path: debug_*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Commit results back to FareHunter
+        run: |
+          git config user.name  "FareHunter Bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data-${{ matrix.route }}.json \
+                  deals-${{ matrix.route }}.json \
+                  public-web/deals-${{ matrix.route }}.json \
+                  scans/
+          if git diff --staged --quiet; then
+            echo "No new data — nothing to commit."
+          else
+            git commit -m "chore: scan ${{ matrix.route }} $(date -u +'%Y-%m-%d %H:%M UTC')"
+            for i in {1..6}; do
+              git pull --rebase && git push && break
+              echo "Push attempt $i failed, retrying..."
+              sleep $((RANDOM % 15 + 5))
+            done
+          fi
