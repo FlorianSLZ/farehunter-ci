@@ -133,22 +133,3 @@ jobs:
             done
           fi
 
-  deploy:
-    name: Deploy to Cloudflare Workers
-    needs: scan
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout private FareHunter repo
-        uses: actions/checkout@v4
-        with:
-          repository: FlorianSLZ/FareHunter
-          token: ${{ secrets.FAREHUNTER_PAT }}
-          # Pull latest so we get all deals files committed by scan jobs
-          ref: main
-
-      - name: Deploy worker + static assets
-        working-directory: public-web
-        run: npx wrangler@latest deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
