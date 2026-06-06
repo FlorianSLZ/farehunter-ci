@@ -39,7 +39,7 @@ jobs:
           token: ${{ secrets.FAREHUNTER_PAT }}
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -90,7 +90,7 @@ jobs:
 
       - name: Upload deals artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: deals-${{ matrix.route }}-${{ github.run_id }}
           path: deals-${{ matrix.route }}.json
@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload debug screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: debug-screenshots-${{ matrix.route }}-${{ github.run_id }}
           path: debug_*.png
