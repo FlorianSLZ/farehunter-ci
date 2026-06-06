@@ -11,6 +11,9 @@ on:
         default: ''
         type: string
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: read   # this public repo needs no write access
 
