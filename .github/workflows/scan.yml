@@ -103,14 +103,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Copy deals to public-web
+        if: always()
+        run: |
+          if [ -f deals-${{ matrix.route }}.json ]; then
+            cp deals-${{ matrix.route }}.json public-web/deals-${{ matrix.route }}.json
+          fi
+
       - name: Commit results back to FareHunter
+        if: always()
         run: |
           git config user.name  "FareHunter Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data-${{ matrix.route }}.json \
-                  deals-${{ matrix.route }}.json \
-                  public-web/deals-${{ matrix.route }}.json \
-                  scans/
+          [ -f data-${{ matrix.route }}.json ]              && git add data-${{ matrix.route }}.json
+          [ -f deals-${{ matrix.route }}.json ]             && git add deals-${{ matrix.route }}.json
+          [ -f public-web/deals-${{ matrix.route }}.json ]  && git add public-web/deals-${{ matrix.route }}.json
+          [ -d scans ]                                       && git add scans/
           if git diff --staged --quiet; then
             echo "No new data — nothing to commit."
           else
