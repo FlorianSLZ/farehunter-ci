@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        route: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.route != '') && fromJSON(format('["{0}"]', github.event.inputs.route)) || fromJSON('["ZRH-JFK","ZRH-LAX","ZRH-SFO","ZRH-NRT","ZRH-SIN","ZRH-HKG","ZRH-BKK","FRA-JFK","FRA-SIN","FRA-NRT","MXP-BKK","MXP-HKG","OSL-HND","VIE-NRT","AMS-JFK","MUC-JFK","MUC-SIN","MUC-NRT","MUC-BKK","MUC-HKG","BUD-JFK","BUD-NRT","BUD-BKK"]') }}
+        route: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.route != '') && fromJSON(format('["{0}"]', github.event.inputs.route)) || fromJSON('["ZRH-JFK","ZRH-LAX","ZRH-SFO","ZRH-NRT","ZRH-HND","ZRH-SIN","ZRH-HKG","ZRH-BKK","FRA-JFK","FRA-LAX","FRA-SFO","FRA-NRT","FRA-HND","FRA-SIN","FRA-HKG","FRA-BKK","MXP-JFK","MXP-LAX","MXP-SFO","MXP-NRT","MXP-HND","MXP-SIN","MXP-HKG","MXP-BKK","OSL-JFK","OSL-LAX","OSL-SFO","OSL-NRT","OSL-HND","OSL-SIN","OSL-HKG","OSL-BKK","VIE-JFK","VIE-LAX","VIE-SFO","VIE-NRT","VIE-HND","VIE-SIN","VIE-HKG","VIE-BKK","AMS-JFK","AMS-LAX","AMS-SFO","AMS-NRT","AMS-HND","AMS-SIN","AMS-HKG","AMS-BKK","MUC-JFK","MUC-LAX","MUC-SFO","MUC-NRT","MUC-HND","MUC-SIN","MUC-HKG","MUC-BKK","BUD-JFK","BUD-LAX","BUD-SFO","BUD-NRT","BUD-HND","BUD-SIN","BUD-HKG","BUD-BKK"]') }}
 
     steps:
       - name: Checkout private FareHunter repo
