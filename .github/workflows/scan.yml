@@ -2,7 +2,7 @@ name: FareHunter Daily Scan
 
 on:
   schedule:
-    - cron: "0 6,18 * * *"   # 6 AM and 6 PM UTC every day
+    - cron: "0 4 * * *"   # 4 AM UTC every day
   workflow_dispatch:
     inputs:
       route:
@@ -106,13 +106,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Copy deals to public-web
-        if: always()
-        run: |
-          if [ -f deals/${{ matrix.route }}.json ]; then
-            cp deals/${{ matrix.route }}.json public-web/deals-${{ matrix.route }}.json
-          fi
-
       - name: Commit results back to FareHunter
         if: always()
         run: |
@@ -120,7 +113,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           [ -f data/${{ matrix.route }}.json ]               && git add data/${{ matrix.route }}.json
           [ -f deals/${{ matrix.route }}.json ]              && git add deals/${{ matrix.route }}.json
-          [ -f public-web/deals-${{ matrix.route }}.json ]   && git add public-web/deals-${{ matrix.route }}.json
           [ -d scans ]                                        && git add scans/
           if git diff --staged --quiet; then
             echo "No new data — nothing to commit."

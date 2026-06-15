@@ -6,12 +6,12 @@ name: FareHunter Bundle deals-data.js
 # does NOT re-run the already-succeeded `deploy` job, so deals found by re-run
 # jobs would otherwise stay unbundled until the next 6AM/6PM scan.
 #
-# Runs hourly (commits only when deals-data.js actually changes) so a re-run /
-# late scan commit reaches the dashboard within ~1h instead of up to ~12h.
+# Runs daily at 8 AM UTC (commits only when deals-data.js actually changes) so
+# a re-run / late scan commit reaches the dashboard the same morning.
 
 on:
   schedule:
-    - cron: "30 * * * *"   # every hour at :30 (offset from the 6/18 scan crons)
+    - cron: "0 12 * * *"   # daily at 12:00 UTC
   workflow_dispatch:
 
 env:
