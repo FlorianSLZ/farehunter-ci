@@ -3,6 +3,17 @@ name: FareHunter Ultra Scans
 # Separate from scan.yml so it can be triggered manually without kicking off
 # the 171-route scan matrix. Same daily cadence as before (was previously a
 # job inside scan.yml that fired on every trigger of that workflow).
+#
+# Sharded across three jobs (prepare -> scan -> combine) because a single
+# heavy Ultra+ watch set (no per-watch/per-user route cap) can exceed 250+
+# routes x 25 date combos, which blows past the 120-min job timeout if run
+# as one job. Each `scan` shard handles <= ROUTES_PER_SHARD routes so no
+# single shard can time out regardless of how many routes one user watches.
+# `combine` merges shard outputs by (user_id, watch_id) before the single
+# import POST, since /api/ultra/results-import replaces a user's results
+# wholesale and the dashboard only reads the first result per watch_id --
+# posting un-merged partial results per shard would silently drop combos.
+# See ULTRA.md "CI" section in the private repo for the full picture.
 
 on:
   schedule:
@@ -11,33 +22,27 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ROUTES_PER_SHARD: "8"   # 8 routes x <=25 combos = <=200 searches ≈ 80 min, safe under the 120-min timeout
 
 permissions:
   contents: read   # this public repo needs no write access
 
 jobs:
-  ultra:
-    name: Ultra watch scans (dep ±2 × ret ±2)
+  prepare:
+    name: Fetch watches & plan shards
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    concurrency:
-      group: fare-hunter-ultra
-      cancel-in-progress: false
-
+    timeout-minutes: 10
+    outputs:
+      has_watches: ${{ steps.plan.outputs.has_watches || 'false' }}
+      matrix: ${{ steps.plan.outputs.matrix || '[]' }}
     steps:
-      - name: Checkout private FareHunter repo
-        uses: actions/checkout@v4
-        with:
-          repository: FlorianSLZ/FareHunter
-          token: ${{ secrets.FAREHUNTER_PAT }}
-
       # Watches live in Cloudflare KV (created by Ultra users via the dashboard).
-      # The worker exports them for CI; results go back via the import endpoint —
-      # no git commit and no Cloudflare deploy involved. See ULTRA.md in FareHunter.
+      # Results go back via the import endpoint — no git commit and no
+      # Cloudflare deploy involved. See ULTRA.md in FareHunter.
       - name: Fetch Ultra watches
         id: watches
         run: |
-          echo "has_watches=false" >> "$GITHUB_OUTPUT"
+          echo "status=skip" >> "$GITHUB_OUTPUT"
           if [ -z "${{ secrets.ULTRA_SYNC_TOKEN }}" ]; then
             echo "ULTRA_SYNC_TOKEN not configured — skipping Ultra scan."
             exit 0
@@ -49,31 +54,187 @@ jobs:
             echo "Export endpoint returned HTTP $status — skipping Ultra scan."
             exit 0
           fi
-          count=$(python3 -c "import json;d=json.load(open('watches.json'));print(sum(len(u.get('watches',[])) for u in d.get('users',[])))")
-          echo "Found $count watch(es)."
-          [ "$count" != "0" ] && echo "has_watches=true" >> "$GITHUB_OUTPUT" || true
+          echo "status=ok" >> "$GITHUB_OUTPUT"
+
+      - name: Plan shards
+        id: plan
+        if: steps.watches.outputs.status == 'ok'
+        shell: python
+        run: |
+          import json, math, os, pathlib
+
+          routes_per_shard = int(os.environ["ROUTES_PER_SHARD"])
+          payload = json.loads(pathlib.Path("watches.json").read_text(encoding="utf-8"))
+
+          units = []
+          for user in payload.get("users", []):
+              user_id = user.get("user_id")
+              for watch in user.get("watches", []):
+                  origins = watch.get("origins") or ([watch["origin"]] if watch.get("origin") else [])
+                  destinations = watch.get("destinations") or ([watch["destination"]] if watch.get("destination") else [])
+                  for o in sorted(origins):
+                      for d in sorted(destinations):
+                          units.append((user_id, watch.get("id"), o, d, watch["departure_date"], watch["return_date"]))
+
+          units.sort(key=lambda u: (str(u[0]), str(u[1]), u[2], u[3]))
+          shard_count = math.ceil(len(units) / routes_per_shard) if units else 0
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"has_watches={'true' if shard_count else 'false'}\n")
+              f.write(f"matrix={json.dumps(list(range(shard_count)))}\n")
+
+          n_watches = sum(len(u.get("watches", [])) for u in payload.get("users", []))
+          print(f"{len(units)} route(s) across {n_watches} watch(es) -> {shard_count} shard(s) of <= {routes_per_shard} routes")
+
+      - name: Upload watches export for shard jobs
+        if: steps.plan.outputs.has_watches == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ultra-watches-export-${{ github.run_id }}
+          path: watches.json
+          retention-days: 1
+
+  scan:
+    name: Ultra shard ${{ matrix.shard }}
+    needs: prepare
+    if: needs.prepare.outputs.has_watches == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: fare-hunter-ultra-${{ matrix.shard }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+
+    steps:
+      - name: Checkout private FareHunter repo
+        uses: actions/checkout@v4
+        with:
+          repository: FlorianSLZ/FareHunter
+          token: ${{ secrets.FAREHUNTER_PAT }}
+
+      - name: Download watches export
+        uses: actions/download-artifact@v6
+        with:
+          name: ultra-watches-export-${{ github.run_id }}
+
+      - name: Extract this shard's routes
+        shell: python
+        run: |
+          import json, os, pathlib
+          from collections import defaultdict
+
+          routes_per_shard = int(os.environ["ROUTES_PER_SHARD"])
+          shard_index = int(os.environ["SHARD_INDEX"])
+          payload = json.loads(pathlib.Path("watches.json").read_text(encoding="utf-8"))
+
+          units = []
+          for user in payload.get("users", []):
+              user_id = user.get("user_id")
+              for watch in user.get("watches", []):
+                  origins = watch.get("origins") or ([watch["origin"]] if watch.get("origin") else [])
+                  destinations = watch.get("destinations") or ([watch["destination"]] if watch.get("destination") else [])
+                  for o in sorted(origins):
+                      for d in sorted(destinations):
+                          units.append((user_id, watch.get("id"), o, d, watch["departure_date"], watch["return_date"]))
+
+          units.sort(key=lambda u: (str(u[0]), str(u[1]), u[2], u[3]))
+          shard = units[shard_index * routes_per_shard : (shard_index + 1) * routes_per_shard]
+
+          by_user = defaultdict(list)
+          for user_id, watch_id, o, d, dep, ret in shard:
+              by_user[user_id].append({
+                  "id": watch_id, "origin": o, "destination": d,
+                  "departure_date": dep, "return_date": ret,
+              })
+
+          out = {"users": [{"user_id": uid, "watches": ws} for uid, ws in by_user.items()]}
+          pathlib.Path("shard_watches.json").write_text(json.dumps(out), encoding="utf-8")
+          print(f"Shard {shard_index}: {len(shard)} route(s) across {len(by_user)} user(s)")
 
       - name: Set up Python 3.12
-        if: steps.watches.outputs.has_watches == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install Python dependencies
-        if: steps.watches.outputs.has_watches == 'true'
         run: pip install -r requirements.txt
 
       - name: Install Playwright browsers
-        if: steps.watches.outputs.has_watches == 'true'
         run: playwright install chromium --with-deps
 
-      - name: Scan Ultra watches
-        if: steps.watches.outputs.has_watches == 'true'
-        run: python main.py --watches watches.json
+      - name: Scan shard ${{ matrix.shard }}
+        run: python main.py --watches shard_watches.json
+
+      - name: Upload shard results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: ultra-shard-result-${{ matrix.shard }}-${{ github.run_id }}
+          path: ultra-results.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Upload debug screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: debug-screenshots-ultra-${{ matrix.shard }}-${{ github.run_id }}
+          path: debug_*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  combine:
+    name: Merge shard results & import to KV
+    needs: [prepare, scan]
+    if: always() && needs.prepare.outputs.has_watches == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download shard results
+        uses: actions/download-artifact@v6
+        with:
+          pattern: ultra-shard-result-*-${{ github.run_id }}
+          path: shard-results
+          merge-multiple: true
+
+      # Shards can split a single watch's routes across jobs, so results for
+      # the same (user_id, watch_id) must be merged (combos concatenated)
+      # before the single import POST — never POST per-shard, it would
+      # overwrite (not append to) the user's KV entry each time.
+      - name: Merge shards by (user, watch)
+        shell: python
+        run: |
+          import glob, json, pathlib
+          from collections import OrderedDict
+
+          merged = OrderedDict()
+          for path in sorted(glob.glob("shard-results/*.json")):
+              data = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+              for user in data.get("users", []):
+                  user_id = user.get("user_id")
+                  bucket = merged.setdefault(user_id, OrderedDict())
+                  for result in user.get("results", []):
+                      watch_id = result.get("watch_id")
+                      existing = bucket.get(watch_id)
+                      if existing:
+                          existing["combos"].extend(result.get("combos", []))
+                          if result.get("scanned_at", "") > existing.get("scanned_at", ""):
+                              existing["scanned_at"] = result["scanned_at"]
+                      else:
+                          bucket[watch_id] = result
+
+          out = {"users": [{"user_id": uid, "results": list(watches.values())} for uid, watches in merged.items()]}
+          pathlib.Path("ultra-results.json").write_text(json.dumps(out), encoding="utf-8")
+          total = sum(len(u["results"]) for u in out["users"])
+          print(f"Merged {len(out['users'])} user(s), {total} watch result(s)")
 
       - name: Upload results to worker KV
-        if: steps.watches.outputs.has_watches == 'true'
         run: |
           curl -fsS -X POST \
             -H "Authorization: Bearer ${{ secrets.ULTRA_SYNC_TOKEN }}" \
@@ -81,12 +242,3 @@ jobs:
             --data-binary @ultra-results.json \
             https://farehunter.ch/api/ultra/results-import
           echo "Ultra results imported."
-
-      - name: Upload debug screenshots
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: debug-screenshots-ultra-${{ github.run_id }}
-          path: debug_*.png
-          if-no-files-found: ignore
-          retention-days: 7
