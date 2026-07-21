@@ -2,7 +2,7 @@ name: FareHunter Daily Scan
 
 on:
   schedule:
-    - cron: "0 4 * * *"   # 4 AM UTC every day
+    - cron: "0 1 * * *"   # 1 AM UTC every day
   workflow_dispatch:
     inputs:
       route:

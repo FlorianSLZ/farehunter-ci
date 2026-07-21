@@ -6,7 +6,7 @@ name: FareHunter Ultra Scans
 
 on:
   schedule:
-    - cron: "0 4 * * *"   # 4 AM UTC every day — matches scan.yml's cadence
+    - cron: "0 10 * * *"   # 10 AM UTC every day — matches scan.yml's cadence
   workflow_dispatch: {}
 
 env:
