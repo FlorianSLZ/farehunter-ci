@@ -114,7 +114,7 @@ jobs:
       - name: Checkout private FareHunter repo
         uses: actions/checkout@v4
         with:
-          repository: FlorianSLZ/FareHunter
+          repository: salnova-GmbH/FareHunter
           token: ${{ secrets.FAREHUNTER_PAT }}
 
       - name: Download watches export
