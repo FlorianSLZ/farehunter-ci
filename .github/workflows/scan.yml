@@ -14,6 +14,17 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# Workflow-level guard: never let two full scans (or two runs of the same
+# single-route dispatch) execute at once. Overlapping runs split the org's 40
+# concurrent-runner slots between them (measured: peak concurrency dropped
+# 40 → 20 and wall time doubled from ~7 h to ~15.7 h on 2026-08-04). A new
+# full run queues behind the running one instead. Single-route dispatches get
+# their own group so they don't wait hours behind a full scan; the per-route
+# job-level groups below still serialize same-route jobs across runs.
+concurrency:
+  group: farehunter-scan-${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.route != '') && github.event.inputs.route || 'ALL' }}
+  cancel-in-progress: false
+
 permissions:
   contents: read   # this public repo needs no write access
 
@@ -32,11 +43,24 @@ jobs:
         route: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.route != '') && fromJSON(format('["{0}"]', github.event.inputs.route)) || fromJSON('["ZRH-JFK","ZRH-LAX","ZRH-SFO","ZRH-NRT","ZRH-HND","ZRH-SIN","ZRH-HKG","ZRH-BKK","ZRH-SEA","ZRH-BOG","ZRH-ICN","ZRH-JNB","ZRH-DXB","ZRH-DEL","ZRH-KUL","ZRH-SGN","ZRH-TPE","ZRH-GRU","ZRH-YYZ","FRA-JFK","FRA-LAX","FRA-SFO","FRA-NRT","FRA-HND","FRA-SIN","FRA-HKG","FRA-BKK","FRA-SEA","FRA-BOG","FRA-ICN","FRA-JNB","FRA-DXB","FRA-DEL","FRA-KUL","FRA-SGN","FRA-TPE","FRA-GRU","FRA-YYZ","MXP-JFK","MXP-LAX","MXP-SFO","MXP-NRT","MXP-HND","MXP-SIN","MXP-HKG","MXP-BKK","MXP-SEA","MXP-BOG","MXP-ICN","MXP-JNB","MXP-DXB","MXP-DEL","MXP-KUL","MXP-SGN","MXP-TPE","MXP-GRU","MXP-YYZ","VIE-JFK","VIE-LAX","VIE-SFO","VIE-NRT","VIE-HND","VIE-SIN","VIE-HKG","VIE-BKK","VIE-SEA","VIE-BOG","VIE-ICN","VIE-JNB","VIE-DXB","VIE-DEL","VIE-KUL","VIE-SGN","VIE-TPE","VIE-GRU","VIE-YYZ","AMS-JFK","AMS-LAX","AMS-SFO","AMS-NRT","AMS-HND","AMS-SIN","AMS-HKG","AMS-BKK","AMS-SEA","AMS-BOG","AMS-ICN","AMS-JNB","AMS-DXB","AMS-DEL","AMS-KUL","AMS-SGN","AMS-TPE","AMS-GRU","AMS-YYZ","MUC-JFK","MUC-LAX","MUC-SFO","MUC-NRT","MUC-HND","MUC-SIN","MUC-HKG","MUC-BKK","MUC-SEA","MUC-BOG","MUC-ICN","MUC-JNB","MUC-DXB","MUC-DEL","MUC-KUL","MUC-SGN","MUC-TPE","MUC-GRU","MUC-YYZ","BUD-JFK","BUD-LAX","BUD-SFO","BUD-NRT","BUD-HND","BUD-SIN","BUD-HKG","BUD-BKK","BUD-SEA","BUD-BOG","BUD-ICN","BUD-JNB","BUD-DXB","BUD-DEL","BUD-KUL","BUD-SGN","BUD-TPE","BUD-GRU","BUD-YYZ","MAD-JFK","MAD-LAX","MAD-SFO","MAD-NRT","MAD-HND","MAD-SIN","MAD-HKG","MAD-BKK","MAD-SEA","MAD-BOG","MAD-ICN","MAD-JNB","MAD-DXB","MAD-DEL","MAD-KUL","MAD-SGN","MAD-TPE","MAD-GRU","MAD-YYZ","WAW-JFK","WAW-LAX","WAW-SFO","WAW-NRT","WAW-HND","WAW-SIN","WAW-HKG","WAW-BKK","WAW-SEA","WAW-BOG","WAW-ICN","WAW-JNB","WAW-DXB","WAW-DEL","WAW-KUL","WAW-SGN","WAW-TPE","WAW-GRU","WAW-YYZ"]') }}
 
     steps:
+      # blob:none + sparse checkout: each scan job needs only the Python code
+      # (root files) and its own route's data/deals/scans files. A full
+      # checkout of the data-heavy private repo took ~310 s per job; this
+      # takes seconds. `git pull --rebase`/`git push` in the commit step still
+      # work — missing blobs are fetched on demand from the promisor remote.
       - name: Checkout private FareHunter repo
         uses: actions/checkout@v4
         with:
           repository: salnova-GmbH/FareHunter
           token: ${{ secrets.FAREHUNTER_PAT }}
+          filter: blob:none
+          sparse-checkout: |
+            /*
+            !/*/
+            data/${{ matrix.route }}.json
+            deals/${{ matrix.route }}.json
+            scans/${{ matrix.route }}
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
@@ -47,11 +71,29 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Playwright browsers
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(python -c 'from importlib.metadata import version; print(version("playwright"))')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browser + system deps
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: playwright install chromium --with-deps
 
+      - name: Install Playwright system deps (browser cached)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: playwright install-deps chromium
+
       - name: Run FareHunter — ${{ matrix.route }}
-        run: python main.py --route ${{ matrix.route }}
+        run: |
+          mkdir -p data deals   # sparse checkout omits them if the route is new
+          python main.py --route ${{ matrix.route }}
 
       - name: Write job summary
         if: always()
@@ -65,7 +107,7 @@ jobs:
 
           route = "${{ matrix.route }}"
           try:
-              deals = json.loads(pathlib.Path(f"deals-{route}.json").read_text(encoding="utf-8"))
+              deals = json.loads(pathlib.Path(f"deals/{route}.json").read_text(encoding="utf-8"))
           except Exception:
               deals = []
 
@@ -93,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: deals-${{ matrix.route }}-${{ github.run_id }}
-          path: deals-${{ matrix.route }}.json
+          path: deals/${{ matrix.route }}.json
           if-no-files-found: ignore
           retention-days: 30
 
@@ -131,12 +173,21 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      # Needs only deals/*.json and public-web/deals-data.js — not the full
+      # data/scans/dist tree.
       - name: Checkout private FareHunter repo
         uses: actions/checkout@v4
         with:
           repository: salnova-GmbH/FareHunter
           token: ${{ secrets.FAREHUNTER_PAT }}
           ref: main
+          filter: blob:none
+          sparse-checkout: |
+            /*
+            !/*/
+            deals/
+            public-web/deals-data.js
+          sparse-checkout-cone-mode: false
 
       - name: Generate deals-data.js from all route deals files
         working-directory: public-web
