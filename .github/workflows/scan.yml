@@ -30,21 +30,24 @@ permissions:
 
 jobs:
   scan:
-    name: Scrape ${{ matrix.route }}
+    # 3 routes per job (57 jobs instead of 171): same scrape time, but 114
+    # fewer checkout/install setups and far less contention in the parallel
+    # commit/pull-rebase race. 150-min timeout = 3 × ~40 min + setup headroom.
+    name: Scrape ${{ join(matrix.routes, ' ') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     concurrency:
-      group: fare-hunter-scan-${{ matrix.route }}
+      group: fare-hunter-scan-${{ join(matrix.routes, '-') }}
       cancel-in-progress: false
 
     strategy:
       fail-fast: false
       matrix:
-        route: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.route != '') && fromJSON(format('["{0}"]', github.event.inputs.route)) || fromJSON('["ZRH-JFK","ZRH-LAX","ZRH-SFO","ZRH-NRT","ZRH-HND","ZRH-SIN","ZRH-HKG","ZRH-BKK","ZRH-SEA","ZRH-BOG","ZRH-ICN","ZRH-JNB","ZRH-DXB","ZRH-DEL","ZRH-KUL","ZRH-SGN","ZRH-TPE","ZRH-GRU","ZRH-YYZ","FRA-JFK","FRA-LAX","FRA-SFO","FRA-NRT","FRA-HND","FRA-SIN","FRA-HKG","FRA-BKK","FRA-SEA","FRA-BOG","FRA-ICN","FRA-JNB","FRA-DXB","FRA-DEL","FRA-KUL","FRA-SGN","FRA-TPE","FRA-GRU","FRA-YYZ","MXP-JFK","MXP-LAX","MXP-SFO","MXP-NRT","MXP-HND","MXP-SIN","MXP-HKG","MXP-BKK","MXP-SEA","MXP-BOG","MXP-ICN","MXP-JNB","MXP-DXB","MXP-DEL","MXP-KUL","MXP-SGN","MXP-TPE","MXP-GRU","MXP-YYZ","VIE-JFK","VIE-LAX","VIE-SFO","VIE-NRT","VIE-HND","VIE-SIN","VIE-HKG","VIE-BKK","VIE-SEA","VIE-BOG","VIE-ICN","VIE-JNB","VIE-DXB","VIE-DEL","VIE-KUL","VIE-SGN","VIE-TPE","VIE-GRU","VIE-YYZ","AMS-JFK","AMS-LAX","AMS-SFO","AMS-NRT","AMS-HND","AMS-SIN","AMS-HKG","AMS-BKK","AMS-SEA","AMS-BOG","AMS-ICN","AMS-JNB","AMS-DXB","AMS-DEL","AMS-KUL","AMS-SGN","AMS-TPE","AMS-GRU","AMS-YYZ","MUC-JFK","MUC-LAX","MUC-SFO","MUC-NRT","MUC-HND","MUC-SIN","MUC-HKG","MUC-BKK","MUC-SEA","MUC-BOG","MUC-ICN","MUC-JNB","MUC-DXB","MUC-DEL","MUC-KUL","MUC-SGN","MUC-TPE","MUC-GRU","MUC-YYZ","BUD-JFK","BUD-LAX","BUD-SFO","BUD-NRT","BUD-HND","BUD-SIN","BUD-HKG","BUD-BKK","BUD-SEA","BUD-BOG","BUD-ICN","BUD-JNB","BUD-DXB","BUD-DEL","BUD-KUL","BUD-SGN","BUD-TPE","BUD-GRU","BUD-YYZ","MAD-JFK","MAD-LAX","MAD-SFO","MAD-NRT","MAD-HND","MAD-SIN","MAD-HKG","MAD-BKK","MAD-SEA","MAD-BOG","MAD-ICN","MAD-JNB","MAD-DXB","MAD-DEL","MAD-KUL","MAD-SGN","MAD-TPE","MAD-GRU","MAD-YYZ","WAW-JFK","WAW-LAX","WAW-SFO","WAW-NRT","WAW-HND","WAW-SIN","WAW-HKG","WAW-BKK","WAW-SEA","WAW-BOG","WAW-ICN","WAW-JNB","WAW-DXB","WAW-DEL","WAW-KUL","WAW-SGN","WAW-TPE","WAW-GRU","WAW-YYZ"]') }}
+        routes: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.route != '') && fromJSON(format('[["{0}"]]', github.event.inputs.route)) || fromJSON('[["ZRH-JFK","ZRH-LAX","ZRH-SFO"],["ZRH-NRT","ZRH-HND","ZRH-SIN"],["ZRH-HKG","ZRH-BKK","ZRH-SEA"],["ZRH-BOG","ZRH-ICN","ZRH-JNB"],["ZRH-DXB","ZRH-DEL","ZRH-KUL"],["ZRH-SGN","ZRH-TPE","ZRH-GRU"],["ZRH-YYZ","FRA-JFK","FRA-LAX"],["FRA-SFO","FRA-NRT","FRA-HND"],["FRA-SIN","FRA-HKG","FRA-BKK"],["FRA-SEA","FRA-BOG","FRA-ICN"],["FRA-JNB","FRA-DXB","FRA-DEL"],["FRA-KUL","FRA-SGN","FRA-TPE"],["FRA-GRU","FRA-YYZ","MXP-JFK"],["MXP-LAX","MXP-SFO","MXP-NRT"],["MXP-HND","MXP-SIN","MXP-HKG"],["MXP-BKK","MXP-SEA","MXP-BOG"],["MXP-ICN","MXP-JNB","MXP-DXB"],["MXP-DEL","MXP-KUL","MXP-SGN"],["MXP-TPE","MXP-GRU","MXP-YYZ"],["VIE-JFK","VIE-LAX","VIE-SFO"],["VIE-NRT","VIE-HND","VIE-SIN"],["VIE-HKG","VIE-BKK","VIE-SEA"],["VIE-BOG","VIE-ICN","VIE-JNB"],["VIE-DXB","VIE-DEL","VIE-KUL"],["VIE-SGN","VIE-TPE","VIE-GRU"],["VIE-YYZ","AMS-JFK","AMS-LAX"],["AMS-SFO","AMS-NRT","AMS-HND"],["AMS-SIN","AMS-HKG","AMS-BKK"],["AMS-SEA","AMS-BOG","AMS-ICN"],["AMS-JNB","AMS-DXB","AMS-DEL"],["AMS-KUL","AMS-SGN","AMS-TPE"],["AMS-GRU","AMS-YYZ","MUC-JFK"],["MUC-LAX","MUC-SFO","MUC-NRT"],["MUC-HND","MUC-SIN","MUC-HKG"],["MUC-BKK","MUC-SEA","MUC-BOG"],["MUC-ICN","MUC-JNB","MUC-DXB"],["MUC-DEL","MUC-KUL","MUC-SGN"],["MUC-TPE","MUC-GRU","MUC-YYZ"],["BUD-JFK","BUD-LAX","BUD-SFO"],["BUD-NRT","BUD-HND","BUD-SIN"],["BUD-HKG","BUD-BKK","BUD-SEA"],["BUD-BOG","BUD-ICN","BUD-JNB"],["BUD-DXB","BUD-DEL","BUD-KUL"],["BUD-SGN","BUD-TPE","BUD-GRU"],["BUD-YYZ","MAD-JFK","MAD-LAX"],["MAD-SFO","MAD-NRT","MAD-HND"],["MAD-SIN","MAD-HKG","MAD-BKK"],["MAD-SEA","MAD-BOG","MAD-ICN"],["MAD-JNB","MAD-DXB","MAD-DEL"],["MAD-KUL","MAD-SGN","MAD-TPE"],["MAD-GRU","MAD-YYZ","WAW-JFK"],["WAW-LAX","WAW-SFO","WAW-NRT"],["WAW-HND","WAW-SIN","WAW-HKG"],["WAW-BKK","WAW-SEA","WAW-BOG"],["WAW-ICN","WAW-JNB","WAW-DXB"],["WAW-DEL","WAW-KUL","WAW-SGN"],["WAW-TPE","WAW-GRU","WAW-YYZ"]]') }}
 
     steps:
       # blob:none + sparse checkout: each scan job needs only the Python code
-      # (root files) and its own route's data/deals/scans files. A full
+      # (root files) and its own routes' data/deals/skips/scans files. A full
       # checkout of the data-heavy private repo took ~310 s per job; this
       # takes seconds. `git pull --rebase`/`git push` in the commit step still
       # work — missing blobs are fetched on demand from the promisor remote.
@@ -57,10 +60,13 @@ jobs:
           sparse-checkout: |
             /*
             !/*/
-            data/${{ matrix.route }}.json
-            deals/${{ matrix.route }}.json
-            scans/${{ matrix.route }}
           sparse-checkout-cone-mode: false
+
+      - name: Add this job's route files to the sparse checkout
+        run: |
+          for R in ${{ join(matrix.routes, ' ') }}; do
+            git sparse-checkout add "data/$R.json" "deals/$R.json" "skips/$R.json" "scans/$R"
+          done
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6
@@ -90,10 +96,19 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: playwright install-deps chromium
 
-      - name: Run FareHunter — ${{ matrix.route }}
+      - name: Run FareHunter — ${{ join(matrix.routes, ' ') }}
         run: |
-          mkdir -p data deals   # sparse checkout omits them if the route is new
-          python main.py --route ${{ matrix.route }}
+          mkdir -p data deals skips   # sparse checkout omits them if a route is new
+          FAILED=""
+          for R in ${{ join(matrix.routes, ' ') }}; do
+            echo "::group::Scan $R"
+            python main.py --route "$R" || FAILED="$FAILED $R"
+            echo "::endgroup::"
+          done
+          if [ -n "$FAILED" ]; then
+            echo "Failed routes:$FAILED"
+            exit 1
+          fi
 
       - name: Write job summary
         if: always()
@@ -105,27 +120,40 @@ jobs:
           if not summary_file:
               raise SystemExit(0)
 
-          route = "${{ matrix.route }}"
-          try:
-              deals = json.loads(pathlib.Path(f"deals/{route}.json").read_text(encoding="utf-8"))
-          except Exception:
-              deals = []
+          lines = []
+          for route in "${{ join(matrix.routes, ' ') }}".split():
+              try:
+                  deals = json.loads(pathlib.Path(f"deals/{route}.json").read_text(encoding="utf-8"))
+              except Exception:
+                  deals = []
+              stats = {}
+              try:
+                  index = json.loads(pathlib.Path(f"scans/{route}/index.json").read_text(encoding="utf-8"))
+                  stats = index[-1].get("stats", {})
+              except Exception:
+                  pass
 
-          lines = [f"## FareHunter — {route}\n"]
-          if deals:
-              lines.append(f"### {len(deals)} deal(s) detected\n")
-              for d in deals:
-                  icon = "🔥" if d["deal"] == "EXCEPTIONAL DEAL" else "✅"
-                  dep = d.get("departure_date", "")
-                  ret = d.get("return_date", "")
-                  date_range = f"{dep} → {ret}" if ret else dep
+              lines.append(f"## FareHunter — {route}\n")
+              if stats:
                   lines.append(
-                      f"{icon} **{d['origin']} → {d['destination']}** ({date_range}) — "
-                      f"${d['price']:,.0f} vs ${d['baseline']:,.0f} baseline "
-                      f"({d['deal']}) — {d['airline']}"
+                      f"searched {stats.get('searched', '?')} · failed {stats.get('failed', '?')}"
+                      f" · skipped {stats.get('skipped', 0)} known-empty far-horizon combos\n"
                   )
-          else:
-              lines.append("No deals detected this run.")
+              if deals:
+                  lines.append(f"### {len(deals)} deal(s) detected\n")
+                  for d in deals:
+                      icon = "🔥" if d["deal"] == "EXCEPTIONAL DEAL" else "✅"
+                      dep = d.get("departure_date", "")
+                      ret = d.get("return_date", "")
+                      date_range = f"{dep} → {ret}" if ret else dep
+                      lines.append(
+                          f"{icon} **{d['origin']} → {d['destination']}** ({date_range}) — "
+                          f"${d['price']:,.0f} vs ${d['baseline']:,.0f} baseline "
+                          f"({d['deal']}) — {d['airline']}"
+                      )
+              else:
+                  lines.append("No deals detected this run.")
+              lines.append("")
 
           with open(summary_file, "a", encoding="utf-8") as f:
               f.write("\n".join(lines) + "\n")
@@ -134,8 +162,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: deals-${{ matrix.route }}-${{ github.run_id }}
-          path: deals/${{ matrix.route }}.json
+          name: deals-${{ join(matrix.routes, '-') }}-${{ github.run_id }}
+          path: deals/*.json
           if-no-files-found: ignore
           retention-days: 30
 
@@ -143,7 +171,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: debug-screenshots-${{ matrix.route }}-${{ github.run_id }}
+          name: debug-screenshots-${{ join(matrix.routes, '-') }}-${{ github.run_id }}
           path: debug_*.png
           if-no-files-found: ignore
           retention-days: 7
@@ -153,13 +181,16 @@ jobs:
         run: |
           git config user.name  "FareHunter Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          [ -f data/${{ matrix.route }}.json ]               && git add data/${{ matrix.route }}.json
-          [ -f deals/${{ matrix.route }}.json ]              && git add deals/${{ matrix.route }}.json
-          [ -d scans ]                                        && git add scans/
+          for R in ${{ join(matrix.routes, ' ') }}; do
+            [ -f "data/$R.json" ]  && git add "data/$R.json"  || true
+            [ -f "deals/$R.json" ] && git add "deals/$R.json" || true
+            [ -f "skips/$R.json" ] && git add "skips/$R.json" || true
+          done
+          [ -d scans ] && git add scans/ || true
           if git diff --staged --quiet; then
             echo "No new data — nothing to commit."
           else
-            git commit -m "chore: scan ${{ matrix.route }} $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git commit -m "chore: scan ${{ join(matrix.routes, ' ') }} $(date -u +'%Y-%m-%d %H:%M UTC')"
             for i in {1..6}; do
               git pull --rebase && git push && break
               echo "Push attempt $i failed, retrying..."
