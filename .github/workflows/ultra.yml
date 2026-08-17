@@ -1,7 +1,7 @@
 name: FareHunter Ultra Scans
 
 # Separate from scan.yml so it can be triggered manually without kicking off
-# the 171-route scan matrix. Same daily cadence as before (was previously a
+# the 190-route scan matrix. Same daily cadence as before (was previously a
 # job inside scan.yml that fired on every trigger of that workflow).
 #
 # Sharded across three jobs (prepare -> scan -> combine) because a single
