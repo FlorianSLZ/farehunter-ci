@@ -25,8 +25,13 @@ jobs:
     steps:
       # Needs deals/*.json (deal selection), src/content/blog/ (dedup state
       # + the post itself), the rest of src/ + root config (full Astro
-      # build), scripts/ (generation logic), and public-web/ (build output +
-      # the files Cloudflare doesn't build). Not data/, skips/, scans/ — the
+      # build), scripts/ (generation logic), public/ (Astro's static-assets
+      # source — destination hero images, OG images, robots.txt, sitemap.xml;
+      # astro.config.mjs copies this into outDir verbatim, so omitting it
+      # doesn't just mean missing images, it means npm run build silently
+      # produces a dist/ with those files DELETED, and committing that
+      # wipes them off the live site), and public-web/ (build output + the
+      # files Cloudflare doesn't build). Not data/, skips/, scans/ — the
       # multi-GB history this job never touches.
       - name: Checkout private FareHunter repo
         uses: actions/checkout@v7
@@ -40,6 +45,7 @@ jobs:
             src/
             scripts/
             deals/
+            public/
             public-web/
           sparse-checkout-cone-mode: false
 
