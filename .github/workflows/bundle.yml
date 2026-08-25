@@ -14,9 +14,6 @@ on:
     - cron: "0 12 * * *"   # daily at 12:00 UTC
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 permissions:
   contents: read   # this public repo needs no write access
 
@@ -26,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout private FareHunter repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: salnova-GmbH/FareHunter
           token: ${{ secrets.FAREHUNTER_PAT }}

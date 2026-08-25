@@ -21,7 +21,6 @@ on:
   workflow_dispatch: {}
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ROUTES_PER_SHARD: "8"   # 8 routes x <=25 combos = <=200 searches ≈ 80 min, safe under the 120-min timeout
 
 permissions:
@@ -112,7 +111,7 @@ jobs:
 
     steps:
       - name: Checkout private FareHunter repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: salnova-GmbH/FareHunter
           token: ${{ secrets.FAREHUNTER_PAT }}

@@ -11,9 +11,6 @@ on:
         default: ''
         type: string
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 # Workflow-level guard: never let two full scans (or two runs of the same
 # single-route dispatch) execute at once. Overlapping runs split the org's 40
 # concurrent-runner slots between them (measured: peak concurrency dropped
@@ -52,7 +49,7 @@ jobs:
       # takes seconds. `git pull --rebase`/`git push` in the commit step still
       # work — missing blobs are fetched on demand from the promisor remote.
       - name: Checkout private FareHunter repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: salnova-GmbH/FareHunter
           token: ${{ secrets.FAREHUNTER_PAT }}
@@ -83,7 +80,7 @@ jobs:
 
       - name: Cache Playwright Chromium
         id: playwright-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ steps.playwright-version.outputs.version }}
@@ -207,7 +204,7 @@ jobs:
       # Needs deals/*.json, skips/*.json, scans/*/index.json and the two
       # generated public-web bundles — not the full data/dist tree.
       - name: Checkout private FareHunter repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: salnova-GmbH/FareHunter
           token: ${{ secrets.FAREHUNTER_PAT }}
