@@ -7,7 +7,7 @@ name: FareHunter Weekly Blog Post
 
 on:
   schedule:
-    - cron: "0 8 * * 2"   # Tuesdays, 08:00 UTC
+    - cron: "0 6 * * 2"   # Tuesdays, 06:00 UTC
   workflow_dispatch: {}
 
 concurrency:
